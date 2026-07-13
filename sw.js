@@ -1,6 +1,6 @@
-const CACHE = 'zorrotza-aire-v1.0.6';
+const CACHE = 'zorrotza-aire-v1.0.8';
 const APP_SHELL = [
-  './', './index.html', './styles.css?v=1.0.6', './app.js?v=1.0.6', './manifest.webmanifest',
+  './', './index.html', './styles.css?v=1.0.8', './app.js?v=1.0.8', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'
 ];
 
@@ -16,6 +16,15 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   const isData = url.hostname.includes('euskadi.eus') || url.hostname.includes('api.euskadi');
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).then(response => {
+      const copy = response.clone();
+      caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+      return response;
+    }).catch(() => caches.match('./index.html')));
+    return;
+  }
 
   if (isData) {
     event.respondWith(fetch(event.request).then(response => {

@@ -1,8 +1,160 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0a2428"/>
-  <circle cx="256" cy="256" r="178" fill="#102f34" stroke="#77e7c2" stroke-width="12"/>
-  <path d="M104 293c79-102 163 79 304-68" fill="none" stroke="#2f6870" stroke-width="44" stroke-linecap="round"/>
-  <circle cx="181" cy="256" r="34" fill="#77e7c2" stroke="#0a2428" stroke-width="15"/>
-  <circle cx="326" cy="253" r="28" fill="#c8ef6b" stroke="#0a2428" stroke-width="13"/>
-  <path d="M238 310h28v81h-28zm-50 28h28v53h-28zm100-53h28v106h-28z" fill="#77e7c2"/>
-</svg>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071d22">
+  <meta name="description" content="Подробный независимый интерфейс к официальным датчикам качества воздуха вокруг Zorrotza и промышленной площадки Profersa в Бильбао.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Zorrotza Aire">
+  <title>Zorrotza Aire — датчики вокруг Profersa</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="./styles.css?v=1.0.8">
+</head>
+<body>
+  <a class="skip-link" href="#main">К данным</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#overview" aria-label="Zorrotza Aire, на главную">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span><strong>Zorrotza Aire</strong><small>Bilbao · Bajo Nervión</small></span>
+      </a>
+      <div class="top-actions">
+        <button class="icon-button" id="shareButton" aria-label="Поделиться приложением" title="Поделиться">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a3 3 0 1 0-2.83-4A3 3 0 0 0 15 5c0 .18.02.35.05.52l-6.1 3.05a3 3 0 1 0 0 4.86l6.1 3.05A3 3 0 0 0 15 17a3 3 0 1 0 .83-2.07l-6.1-3.05c.04-.29.04-.59 0-.88l6.1-3.05A3 3 0 0 0 18 8Z"/></svg>
+        </button>
+        <button class="install-button" id="installButton" hidden>Установить</button>
+        <button class="refresh-button" id="refreshButton"><span class="refresh-icon" aria-hidden="true">↻</span><span>Обновить</span></button>
+      </div>
+    </header>
+
+    <div class="source-banner" id="sourceBanner" role="status" aria-live="polite">
+      <span class="status-dot loading"></span>
+      <div><strong>Подключаем официальные датчики…</strong><small>Open Data Euskadi · почасовые измерения</small></div>
+      <button id="sourceInfoButton" aria-label="Подробнее об источнике">i</button>
+    </div>
+
+    <main id="main">
+      <section class="view active" id="overview" data-view="overview">
+        <div class="hero-grid">
+          <article class="hero-card" id="heroCard">
+            <div class="eyebrow"><span id="heroStationType">Ближайшая станция</span><span id="heroDistance">— км</span></div>
+            <div class="hero-main">
+              <div>
+                <h1 id="heroStation">Zorrotza</h1>
+                <p id="heroUpdated">Ожидаем данные</p>
+              </div>
+              <div class="air-orb loading" id="airOrb"><strong>—</strong><span>индекс</span></div>
+            </div>
+            <div class="hero-verdict">
+              <span class="verdict-icon" id="verdictIcon">·</span>
+              <div><strong id="heroVerdict">Получаем измерения</strong><p id="heroAdvice">Не делаем выводов, пока официальный источник не ответил.</p></div>
+            </div>
+          </article>
+
+          <article class="context-card">
+            <div class="context-title"><span class="factory-pin">P</span><div><strong>Площадка Profersa</strong><small>Camino del Arsenal, 19 · Zorrotza</small></div></div>
+            <div class="distance-rule"><span></span><b id="nearestDistance">—</b><span></span></div>
+            <p>На самой территории завода публичного датчика в наборе данных нет. Приложение показывает окружающие официальные станции и расстояние до них — это важно для корректной интерпретации.</p>
+            <button class="text-button" data-go="about">Как читать данные <span>→</span></button>
+          </article>
+        </div>
+
+        <section class="section-block">
+          <div class="section-heading">
+            <div><span class="kicker">Последний доступный час</span><h2>Что измерено</h2></div>
+            <button class="text-button" data-go="stations">Все станции <span>→</span></button>
+          </div>
+          <div class="metric-grid" id="metricGrid" aria-live="polite"></div>
+        </section>
+
+        <section class="section-block map-section">
+          <div class="section-heading">
+            <div><span class="kicker">Радиус 12 км</span><h2>Датчики вокруг</h2></div>
+            <div class="map-legend"><span><i class="legend-sensor"></i>Станция</span><span><i class="legend-factory"></i>Profersa</span></div>
+          </div>
+          <div class="sensor-map" id="sensorMap" aria-label="Интерактивная карта станций качества воздуха вокруг Profersa"></div>
+          <div class="map-selection" id="mapSelection"></div>
+        </section>
+
+        <section class="section-block transparency-grid">
+          <article class="transparency-card">
+            <span class="card-number">01</span><h3>Что мы знаем</h3>
+            <p>Фактические почасовые концентрации на государственных станциях, время измерения, доступные загрязнители и полноту данных.</p>
+          </article>
+          <article class="transparency-card">
+            <span class="card-number">02</span><h3>Чего мы не знаем</h3>
+            <p>Источник конкретного выброса нельзя определить только по концентрации. Для этого нужны ветер, химический состав и расследование.</p>
+          </article>
+          <article class="transparency-card accent">
+            <span class="card-number">03</span><h3>Почему станции различаются</h3>
+            <p>Трафик, фон и промышленное окружение измеряются в разных местах. Среднее по городу может скрывать локальный пик.</p>
+          </article>
+        </section>
+      </section>
+
+      <section class="view" id="stations" data-view="stations">
+        <div class="page-heading"><span class="kicker">Официальная сеть</span><h1>Станции вокруг Profersa</h1><p>Отсортированы по расстоянию. Нажмите на станцию, чтобы увидеть все параметры и историю.</p></div>
+        <div class="station-layout">
+          <aside class="station-list-panel">
+            <label class="search-box"><span>⌕</span><input id="stationSearch" type="search" placeholder="Найти станцию" autocomplete="off"></label>
+            <div class="filter-row" id="stationFilters">
+              <button class="chip active" data-filter="all">Все</button>
+              <button class="chip" data-filter="industrial">Промышленные</button>
+              <button class="chip" data-filter="traffic">Транспортные</button>
+              <button class="chip" data-filter="background">Фоновые</button>
+            </div>
+            <div class="station-list" id="stationList"></div>
+          </aside>
+          <article class="station-detail" id="stationDetail"></article>
+        </div>
+      </section>
+
+      <section class="view" id="compare" data-view="compare">
+        <div class="page-heading"><span class="kicker">Сравнение без усреднения</span><h1>Один воздух — разные точки</h1><p>Сопоставьте станции за последние 24 часа. Пробелы остаются пробелами: приложение не дорисовывает отсутствующие значения.</p></div>
+        <div class="compare-toolbar">
+          <label>Показатель<select id="compareParameter"></select></label>
+          <div class="compare-stations" id="compareStations"></div>
+        </div>
+        <article class="chart-card">
+          <div class="chart-heading"><div><span class="kicker" id="chartUnit">µg/m³</span><h2 id="chartTitle">История</h2></div><div class="chart-legend" id="chartLegend"></div></div>
+          <div class="chart-wrap" id="compareChart"></div>
+          <div class="chart-note" id="chartNote"></div>
+        </article>
+        <div class="table-card"><div class="section-heading"><div><span class="kicker">Последнее значение</span><h2>Сводка по станциям</h2></div></div><div class="data-table-wrap"><table><thead><tr><th>Станция</th><th>Расстояние</th><th>Значение</th><th>Категория</th><th>Данные</th></tr></thead><tbody id="compareTable"></tbody></table></div></div>
+      </section>
+
+      <section class="view" id="about" data-view="about">
+        <div class="page-heading"><span class="kicker">Методика и контекст</span><h1>Как читать эти данные</h1><p>Датчик — не детектор виновника. Ни зелёная карточка, ни единичный красный час сами по себе не доказывают безопасность или нарушение.</p></div>
+        <div class="explain-grid">
+          <article class="explain-card wide"><span class="explain-icon">◎</span><div><h2>Источник</h2><p>Основной источник — открытая сеть контроля качества воздуха Правительства Страны Басков. Приложение запрашивает перечень станций и почасовые измерения напрямую; время последней успешной синхронизации показывается в интерфейсе.</p><a href="https://opendata.euskadi.eus/api-air-quality/?api=air-quality" target="_blank" rel="noreferrer">Документация API ↗</a></div></article>
+          <article class="explain-card"><span class="explain-icon">μ</span><div><h2>Единицы</h2><p>Большинство загрязнителей показано в микрограммах на кубический метр. CO в официальных наборах может приходить в мг/м³ — приложение сохраняет указанную источником единицу.</p></div></article>
+          <article class="explain-card"><span class="explain-icon">24</span><div><h2>Час и сутки</h2><p>Почасовой пик и среднесуточная рекомендация — разные показатели. Мы явно подписываем период усреднения и не сравниваем их как одно и то же.</p></div></article>
+          <article class="explain-card"><span class="explain-icon">↗</span><div><h2>Ветер</h2><p>Направление ветра помогает сформулировать гипотезу о переносе, но не устанавливает источник. Без метеорологических данных вывод помечается как невозможный.</p></div></article>
+          <article class="explain-card"><span class="explain-icon">!</span><div><h2>Пропуски</h2><p>Нет значения — не значит «ноль». Если станция не измеряет параметр или данные задерживаются, интерфейс показывает «нет данных» и полноту ряда.</p></div></article>
+        </div>
+
+        <section class="section-block">
+          <div class="section-heading"><div><span class="kicker">Ориентиры</span><h2>Пороговые шкалы</h2></div></div>
+          <div class="threshold-table" id="thresholdTable"></div>
+          <p class="fine-print">Цветовая категория рассчитывается по шкале European Air Quality Index для последнего почасового значения. Рекомендации ВОЗ обычно относятся к другому периоду усреднения и показаны отдельно как справочный ориентир, а не юридический норматив.</p>
+        </section>
+
+        <section class="incident-context">
+          <div><span class="kicker">Почему именно Zorrotza</span><h2>Контекст площадки</h2></div>
+          <div class="timeline">
+            <article><time>26.04.2024</time><div><h3>Экзотермическая реакция</h3><p>Колонна пара после реакции сырья с влагой. Пожарные завершили охлаждение пеной; пострадавших не было.</p></div></article>
+            <article><time>11.05.2024</time><div><h3>Повторное задымление</h3><p>Жителям рекомендовали закрыть окна и оставаться дома. После второго эпизода производство временно остановили.</p></div></article>
+            <article><time>08.07.2024</time><div><h3>Возобновление работы</h3><p>Работа разрешена после корректирующих мер, удаления нитросульфатов и дополнительного контроля.</p></div></article>
+          </div>
+          <p class="context-disclaimer">Хронология дана только как общественный контекст. Графики датчиков не приписывают измерения Profersa без официального расследования.</p>
+        </section>
+
+        <section class="source-list">
+          <h2>Проверяемые источники</h2>
+          <a href="https://opendata.euskadi.eus/catalogo/-/calidad-aire-en-euskadi-2026/" target="_blank" rel="noreferrer"><span>Open Data Euskadi</span><small>Актуальный набор станций и измерений</small><b>↗</b></a>
+          <a href="https://www.euskadi.eus/informacion/evaluacion-de-la-c}�����k�w��UЈ��������������BsB�FB�B�B�B�B����ѽ��(����𽹅��(��𽑥��((��񑥅�������ͽ�ɍ��������(�����؁�����􉑥�������������������������􉭥���Ȉ�B�FB�FFF�B�B�B�B�F/F���������B{FB�FB�B��B�B�F?B�B�FF0�B�B�B�FB�B�B�F<���𽑥�����ѽ����􉍱�͕��������ɥ��������B_B�B�FF/FF0��\���ѽ��𽑥��(�����؁���ͽ�ɍ������	����𽑥��(��𽑥�����((���؁������ѽ��Ј����ѽ��Ј�ɽ����х��̈��ɥ����ٔ�����є��𽑥��(���͍ɥ�Ё�Ɍ�����輽չ��������������� ĸ�н���н������й�̈��������͍ɥ���(���͍ɥ�Ё�Ɍ􈸽���������ĸ������������͍ɥ���(𽉽���(�ѵ��(
