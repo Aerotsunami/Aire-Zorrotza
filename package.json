@@ -1,0 +1,11 @@
+{
+  "name": "zorrotza-aire-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA с данными официальных датчиков качества воздуха вокруг Zorrotza",
+  "scripts": {
+    "check": "node --check app.js",
+    "serve": "python -m http.server 4173"
+  },
+  "license": "MIT"
+}
