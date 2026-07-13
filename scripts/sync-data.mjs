@@ -16,6 +16,8 @@ const KNOWN = [
   { id:'sangroniz', name:'Sangroniz', municipality:'Sondika', lat:43.3001, lon:-2.9352, type:'traffic', typeLabel:'пригородная · транспорт' }
 ];
 
+const OPENAPI_URL = 'https://opendata.euskadi.eus/contenidos/recurso_tecnico/data_apirest/es_def/adjuntos/air-quality.json';
+
 const number = value => value === null || value === undefined || value === '' ? NaN : Number(value);
 const measured = value => Number.isFinite(number(value));
 const text = value => String(value ?? '');
@@ -159,6 +161,9 @@ async function stationHistory(id) {
 }
 
 const rawStations = stationArray(await fetchJson(`${API}/air-quality/stations`));
+const openApi = await fetchJson(OPENAPI_URL);
+const hourlyPath = openApi?.paths?.['/air-quality/measurements/hourly/stations/{station-id}/from/{date-time.gt}/to/{date-time.lt}']?.get;
+console.log(`Hourly date parameters: ${JSON.stringify(hourlyPath?.parameters || [])}`);
 let stations = rawStations.map(normalizeStation).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon));
 for (const station of stations) station.distance = distanceKm(FACILITY, station);
 stations = stations.filter(item => item.distance <= RADIUS_KM).sort((a,b) => a.distance - b.distance).slice(0, 9);
