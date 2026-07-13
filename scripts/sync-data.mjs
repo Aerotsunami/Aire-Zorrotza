@@ -50,7 +50,10 @@ async function fetchJson(url, timeout = 25000) {
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const response = await fetch(url, { headers: { accept:'application/json', 'user-agent':'Aire-Zorrotza/1.1 (+https://github.com/Aerotsunami/Aire-Zorrotza)' }, signal:controller.signal });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`);
+    if (!response.ok) {
+      const detail = (await response.text()).replace(/\s+/g, ' ').slice(0, 300);
+      throw new Error(`${response.status} ${response.statusText}: ${detail || url}`);
+    }
     return await response.json();
   } finally { clearTimeout(timer); }
 }
@@ -148,7 +151,7 @@ function history(records) {
 async function stationHistory(id) {
   const to = new Date();
   const from = new Date(to.getTime() - 72 * 3600000);
-  const compact = date => date.toISOString().replace('.000Z', 'Z');
+  const compact = date => date.toISOString().slice(0, 19);
   const path = `/air-quality/measurements/hourly/stations/${encodeURIComponent(id)}/from/${encodeURIComponent(compact(from))}/to/${encodeURIComponent(compact(to))}`;
   const records = extractMeasurements(await fetchJson(`${API}${path}`));
   if (!records.length) throw new Error(`Нет распознанных измерений для станции ${id}`);
