@@ -167,6 +167,7 @@ await Promise.all(stations.map(async station => {
     station.parameters = Object.keys(station.history);
   } catch (error) {
     station.syncError = error.message;
+    console.error(`Station ${station.id} (${station.name}): ${station.syncError}`);
   }
 }));
 
