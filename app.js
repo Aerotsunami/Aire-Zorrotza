@@ -348,8 +348,18 @@
     return { stations: useful, base };
   }
 
-  function saveCache(stations) {
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: new Date().toISOString(), stations })); } catch { /* storage is optional */ }
+  async function loadPublishedSnapshot() {
+    const payload = await fetchJson(`./data/live.json?ts=${Date.now()}`, 6000);
+    if (!Array.isArray(payload?.stations) || !payload.stations.length) throw new Error('Опубликованный снимок данных ещё не создан');
+    const stations = payload.stations.filter(station => station && station.id && Number.isFinite(Number(station.lat)) && Number.isFinite(Number(station.lon)));
+    if (stations.filter(station => Object.values(station.history || {}).some(points => Array.isArray(points) && points.length)).length < 2) {
+      throw new Error('В опубликованном снимке недостаточно измерений');
+    }
+    return { stations, generatedAt: payload.generatedAt || new Date().toISOString(), source: payload.source || 'Open Data Euskadi' };
+  }
+
+  function saveCache(stations, savedAt = new Date().toISOString()) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt, stations })); } catch { /* storage is optional */ }
   }
 
   function readCache() {
@@ -397,13 +407,25 @@
     button.classList.add('loading');
     setSourceState('loading', cachedBeforeRefresh ? 'Обновляем официальные данные…' : 'Подключаем официальные измерения…', cachedBeforeRefresh ? `Сейчас показаны данные ${relativeTime(cachedBeforeRefresh.savedAt)}` : 'Сеть станций уже доступна');
     try {
+      try {
+        const published = await loadPublishedSnapshot();
+        state.stations = published.stations;
+        state.sourceMode = 'live';
+        state.lastSync = published.generatedAt;
+        state.sourceMessage = 'Официальные данные Open Data Euskadi';
+        state.sourceDetail = `Снимок обновлён сервером ${fmtDate(state.lastSync)}. Телефон получает его с GitHub Pages без обращения к заблокированному внешнему API.`;
+        saveCache(state.stations, state.lastSync);
+        setSourceState('live', 'Официальные измерения получены', `Обновлено ${relativeTime(state.lastSync)}`);
+        if (force) showToast('Данные обновлены');
+        return;
+      } catch { /* до первого серверного снимка пробуем официальный API напрямую */ }
       const live = await loadLiveStations();
       state.stations = live.stations;
       state.sourceMode = 'live';
       state.lastSync = new Date().toISOString();
       state.sourceMessage = 'Живые официальные данные';
       state.sourceDetail = `Прямой ответ ${live.base}`;
-      saveCache(state.stations);
+      saveCache(state.stations, state.lastSync);
       setSourceState('live', 'Живые официальные данные', `Open Data Euskadi · синхронизация ${fmtDate(state.lastSync, false)}`);
       showToast('Данные обновлены');
     } catch (error) {
