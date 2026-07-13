@@ -16,7 +16,6 @@ const KNOWN = [
   { id:'sangroniz', name:'Sangroniz', municipality:'Sondika', lat:43.3001, lon:-2.9352, type:'traffic', typeLabel:'пригородная · транспорт' }
 ];
 
-const OPENAPI_URL = 'https://opendata.euskadi.eus/contenidos/recurso_tecnico/data_apirest/es_def/adjuntos/air-quality.json';
 
 const number = value => value === null || value === undefined || value === '' ? NaN : Number(value);
 const measured = value => Number.isFinite(number(value));
@@ -153,7 +152,7 @@ function history(records) {
 async function stationHistory(id) {
   const to = new Date();
   const from = new Date(to.getTime() - 72 * 3600000);
-  const compact = date => date.toISOString().slice(0, 19);
+  const compact = date => date.toISOString().slice(0, 16);
   const path = `/air-quality/measurements/hourly/stations/${encodeURIComponent(id)}/from/${encodeURIComponent(compact(from))}/to/${encodeURIComponent(compact(to))}`;
   const records = extractMeasurements(await fetchJson(`${API}${path}`));
   if (!records.length) throw new Error(`Нет распознанных измерений для станции ${id}`);
@@ -161,9 +160,6 @@ async function stationHistory(id) {
 }
 
 const rawStations = stationArray(await fetchJson(`${API}/air-quality/stations`));
-const openApi = await fetchJson(OPENAPI_URL);
-const hourlyPath = openApi?.paths?.['/air-quality/measurements/hourly/stations/{station-id}/from/{date-time.gt}/to/{date-time.lt}']?.get;
-console.log(`Hourly date parameters: ${JSON.stringify(hourlyPath?.parameters || [])}`);
 let stations = rawStations.map(normalizeStation).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon));
 for (const station of stations) station.distance = distanceKm(FACILITY, station);
 stations = stations.filter(item => item.distance <= RADIUS_KM).sort((a,b) => a.distance - b.distance).slice(0, 9);

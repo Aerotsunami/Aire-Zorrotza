@@ -306,7 +306,7 @@
   }
 
   function isoPath(date) {
-    return date.toISOString().slice(0, 19);
+    return date.toISOString().slice(0, 16);
   }
 
   async function fetchStationHistory(base, stationId) {
