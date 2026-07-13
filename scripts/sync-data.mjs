@@ -154,7 +154,9 @@ async function stationHistory(id) {
   const from = new Date(to.getTime() - 72 * 3600000);
   const compact = date => date.toISOString().slice(0, 16);
   const path = `/air-quality/measurements/hourly/stations/${encodeURIComponent(id)}/from/${encodeURIComponent(compact(from))}/to/${encodeURIComponent(compact(to))}`;
-  const records = extractMeasurements(await fetchJson(`${API}${path}`));
+  const payload = await fetchJson(`${API}${path}`);
+  if (String(id) === '59') console.log(`Station 59 sample: ${JSON.stringify(payload).slice(0, 12000)}`);
+  const records = extractMeasurements(payload);
   if (!records.length) throw new Error(`Нет распознанных измерений для станции ${id}`);
   return history(records);
 }
