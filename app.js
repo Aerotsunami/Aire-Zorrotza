@@ -785,7 +785,9 @@
     $$('.view').forEach(section => section.classList.toggle('active', section.dataset.view === view));
     $$('.bottom-nav button').forEach(button => button.classList.toggle('active', button.dataset.go === view));
     if (updateHash) history.replaceState(null, '', view === 'overview' ? location.pathname + location.search : `#${view}`);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
     if (view === 'overview') {
       requestAnimationFrame(() => leafletMap?.invalidateSize(false));
       setTimeout(() => leafletMap?.invalidateSize(false), 220);
