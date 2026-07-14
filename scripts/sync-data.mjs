@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const API = 'https://api.euskadi.eus';
+const HOURLY_FILES = 'https://opendata.euskadi.eus/contenidos/ds_informes_estudios/calidad_aire_2026/es_def/adjuntos/datos_horarios';
 const FACILITY = { lat: 43.2852, lon: -2.9778 };
 const RADIUS_KM = 12;
 const UNITS = { PM25:'µg/m³', PM10:'µg/m³', NO2:'µg/m³', NO:'µg/m³', SO2:'µg/m³', O3:'µg/m³', CO:'mg/m³', BENZENE:'µg/m³', TEMP:'°C', HUMIDITY:'%', WIND:'m/s' };
@@ -15,9 +16,20 @@ const KNOWN = [
   { id:'parque-europa', name:'Parque Europa', municipality:'Bilbao', lat:43.2590, lon:-2.8934, type:'background', typeLabel:'городская · фон' },
   { id:'sangroniz', name:'Sangroniz', municipality:'Sondika', lat:43.3001, lon:-2.9352, type:'traffic', typeLabel:'пригородная · транспорт' }
 ];
+const FILE_MAP = {
+  '212':'UNIDAD_MOVIL_10', 'elorrieta':'UNIDAD_MOVIL_2', 'barakaldo':'BARAKALDO',
+  'erandio':'ERANDIO', 'maria-diaz':'M_DIAZ_HARO', 'mazarredo':'MAZARREDO',
+  'arraiz':'ARRAIZ_Monte', 'parque-europa':'EUROPA', 'sangroniz':'SANGRONIZ'
+};
+const STATIC_PARAMETERS = {
+  PM25gm3:['PM25','µg/m³'], PM10gm3:['PM10','µg/m³'], NO2gm3:['NO2','µg/m³'],
+  NOgm3:['NO','µg/m³'], SO2gm3:['SO2','µg/m³'], O3gm3:['O3','µg/m³'],
+  COmgm3:['CO','mg/m³'], C6H6gm3:['BENZENE','µg/m³'], TC:['TEMP','°C'],
+  H:['HUMIDITY','%'], Vvienms:['WIND','m/s']
+};
 
 
-const number = value => value === null || value === undefined || value === '' ? NaN : Number(value);
+const number = value => value === null || value === undefined || value === '' ? NaN : Number(String(value).replace(',', '.'));
 const measured = value => Number.isFinite(number(value));
 const text = value => String(value ?? '');
 const simplified = value => text(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -149,27 +161,42 @@ function history(records) {
   return result;
 }
 
-async function stationHistory(id) {
-  const to = new Date();
-  const from = new Date(to.getTime() - 72 * 3600000);
-  const compact = date => date.toISOString().slice(0, 16);
-  const path = `/air-quality/measurements/hourly/stations/${encodeURIComponent(id)}/from/${encodeURIComponent(compact(from))}/to/${encodeURIComponent(compact(to))}`;
-  const payload = await fetchJson(`${API}${path}`);
-  if (String(id) === '59') console.log(`Station 59 sample: ${JSON.stringify(payload).slice(0, 12000)}`);
-  const records = extractMeasurements(payload);
-  if (!records.length) throw new Error(`Нет распознанных измерений для станции ${id}`);
-  return history(records);
+function staticTimestamp(row) {
+  const parts = String(row.Date || '').split('/').map(Number);
+  const hour = Number(String(row.HourGMT || '').split(':')[0]);
+  if (parts.length !== 3 || parts.some(value => !Number.isFinite(value)) || !Number.isFinite(hour)) return null;
+  const date = new Date(Date.UTC(parts[2], parts[1] - 1, parts[0], hour === 24 ? 0 : hour));
+  if (hour === 24) date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString();
 }
 
-const rawStations = stationArray(await fetchJson(`${API}/air-quality/stations`));
-let stations = rawStations.map(normalizeStation).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon));
+async function stationHistory(station) {
+  const file = FILE_MAP[station.id];
+  if (!file) throw new Error(`No hourly file mapping for ${station.name}`);
+  const rows = await fetchJson(`${HOURLY_FILES}/${encodeURIComponent(file)}.json`);
+  const result = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const time = staticTimestamp(row);
+    if (!time) continue;
+    for (const [key, [code, unit]] of Object.entries(STATIC_PARAMETERS)) {
+      if (!measured(row[key])) continue;
+      if (!result[code]) result[code] = [];
+      result[code].push({ code, time, value:number(row[key]), unit });
+    }
+  }
+  for (const code of Object.keys(result)) result[code] = result[code].sort((a,b) => new Date(a.time) - new Date(b.time)).slice(-72);
+  if (!Object.keys(result).length) throw new Error(`No recognized measurements for ${station.name}`);
+  return result;
+}
+
+let stations = KNOWN.map(item => ({ ...item, parameters:[], history:{}, source:'live', officialUrl:'https://opendata.euskadi.eus/catalogo/-/calidad-aire-en-euskadi-2026/' }));
 for (const station of stations) station.distance = distanceKm(FACILITY, station);
 stations = stations.filter(item => item.distance <= RADIUS_KM).sort((a,b) => a.distance - b.distance).slice(0, 9);
-if (!stations.length) throw new Error('API не вернул станции с координатами в радиусе 12 км');
+if (!stations.length) throw new Error('Нет станций с координатами в радиусе 12 км');
 
 await Promise.all(stations.map(async station => {
   try {
-    station.history = await stationHistory(station.id);
+    station.history = await stationHistory(station);
     station.parameters = Object.keys(station.history);
   } catch (error) {
     station.syncError = error.message;
@@ -182,8 +209,8 @@ if (useful.length < 2) throw new Error(`Получены измерения то
 
 const payload = {
   generatedAt:new Date().toISOString(),
-  source:'Open Data Euskadi Air Quality API',
-  sourceUrl:'https://opendata.euskadi.eus/api-air-quality/?api=air-quality',
+  source:'Open Data Euskadi official hourly station files',
+  sourceUrl:'https://opendata.euskadi.eus/catalogo/-/calidad-aire-en-euskadi-2026/',
   radiusKm:RADIUS_KM,
   stations:useful
 };
