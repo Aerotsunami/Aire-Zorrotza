@@ -784,6 +784,10 @@
     $$('.bottom-nav button').forEach(button => button.classList.toggle('active', button.dataset.go === view));
     if (updateHash) history.replaceState(null, '', view === 'overview' ? location.pathname + location.search : `#${view}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (view === 'overview') {
+      requestAnimationFrame(() => leafletMap?.invalidateSize(false));
+      setTimeout(() => leafletMap?.invalidateSize(false), 220);
+    }
   }
 
   function showToast(message) {
@@ -858,6 +862,7 @@
       state.installPrompt.prompt(); await state.installPrompt.userChoice; state.installPrompt = null; $('#installButton').hidden = true;
     });
     window.addEventListener('hashchange', () => navigate(location.hash.slice(1) || 'overview', false));
+    window.addEventListener('resize', () => leafletMap?.invalidateSize(false));
   }
 
   async function init() {
