@@ -5,6 +5,19 @@
   const RADIUS_KM = 12;
   const API_BASES = ['https://api.euskadi.eus'];
   const OFFICIAL_DATASET = 'https://opendata.euskadi.eus/contenidos/ds_informes_estudios/calidad_aire_2026/es_def/adjuntos/';
+  const AUTO_REFRESH_MS = 10 * 60 * 1000;
+  const OFFICIAL_STATION_IDS = ['212', '211', '59', '56', '81', '60', '92', '62', '61'];
+  const STATION_ID_ALIASES = {
+    '212': '212',
+    '211': 'elorrieta',
+    '59': 'barakaldo',
+    '56': 'erandio',
+    '81': 'maria-diaz',
+    '60': 'mazarredo',
+    '92': 'arraiz',
+    '62': 'parque-europa',
+    '61': 'sangroniz'
+  };
   const CACHE_KEY = 'zorrotza-aire-live-v2';
   const CACHE_KEYS = [CACHE_KEY, 'zorrotza-aire-live-v1'];
   const COLORS = ['#77e7c2', '#65d5e8', '#ffc867', '#b8a2ff', '#ff8b69', '#c8ef6b'];
@@ -233,7 +246,12 @@
     return raw.name ?? raw.stationName ?? raw.nombre ?? raw.title ?? raw.properties?.name ?? raw.properties?.nombre ?? `Станция ${raw.id ?? ''}`;
   }
 
-  function matchFallback(name) {
+  function matchFallback(name, id) {
+    const alias = STATION_ID_ALIASES[String(id ?? '')];
+    if (alias) {
+      const matchedById = FALLBACK_STATIONS.find(item => String(item.id) === alias);
+      if (matchedById) return matchedById;
+    }
     const norm = String(name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     return FALLBACK_STATIONS.find(item => {
       const candidate = item.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -243,19 +261,20 @@
 
   function normalizeStation(raw, index) {
     const props = raw.properties || raw;
-    const name = stationName(props);
-    const fallback = matchFallback(name);
+    const id = String(props.id ?? props.stationId ?? props.code ?? props.codigo ?? raw.id ?? index);
+    const rawName = stationName(props);
+    const fallback = matchFallback(rawName, id);
+    const name = fallback?.name || rawName;
     let coords = raw.geometry?.coordinates ?? props.geometry?.coordinates ?? props.location?.coordinates;
     let lon = Number(Array.isArray(coords) ? coords[0] : props.longitude ?? props.lon ?? props.lng ?? props.x);
     let lat = Number(Array.isArray(coords) ? coords[1] : props.latitude ?? props.lat ?? props.y);
     if ((!Number.isFinite(lat) || !Number.isFinite(lon)) && fallback) { lat = fallback.lat; lon = fallback.lon; }
-    const id = String(props.id ?? props.stationId ?? props.code ?? props.codigo ?? raw.id ?? fallback?.id ?? index);
     const typeText = String(props.stationType ?? props.type ?? props.tipo ?? fallback?.typeLabel ?? '').toLowerCase();
     const type = /industr/.test(typeText) ? 'industrial' : /traf|traffic/.test(typeText) ? 'traffic' : 'background';
     const rawParameters = props.parameters ?? props.pollutants ?? props.measurementParameters ?? fallback?.parameters ?? [];
     const parameters = (Array.isArray(rawParameters) ? rawParameters : Object.keys(rawParameters)).map(normalizeParam).filter(code => code !== 'UNKNOWN');
     return {
-      id, name, municipality: props.municipality?.name ?? props.municipality ?? props.municipio ?? fallback?.municipality ?? 'Bizkaia',
+      id, name, municipality: props.location?.municipality ?? props.municipality?.name ?? props.municipality ?? props.municipio ?? fallback?.municipality ?? 'Bizkaia',
       lat, lon, type, typeLabel: fallback?.typeLabel ?? (type === 'industrial' ? 'промышленное влияние' : type === 'traffic' ? 'транспорт' : 'фон'),
       parameters: [...new Set(parameters)], history: {}, source: 'live', raw,
       officialUrl: `https://www.euskadi.eus/aa17aMovilidadWar/estaciones/detalle/${encodeURIComponent(id)}?R01HNoPortal=true`
@@ -276,11 +295,11 @@
       if (typeof value !== 'object') return;
       const time = value.dateTime ?? value.datetime ?? value.date ?? value.timestamp ?? value.measurementDate ?? value.hour ?? value.from ?? inherited.time;
       const unit = value.unit?.symbol ?? value.unit?.name ?? value.unit ?? value.unidad ?? inherited.unit;
-      const parameter = value.parameter ?? value.pollutant ?? value.magnitude ?? value.magnitud ?? value.parameterId ?? value.contaminant ?? inherited.parameter;
+      const parameter = value.parameter ?? value.pollutant ?? value.magnitude ?? value.magnitud ?? value.parameterId ?? value.contaminant ?? value.name ?? inherited.parameter;
       const directValue = value.value ?? value.measurementValue ?? value.average ?? value.concentration ?? value.valor ?? value.media;
       const normalizedTime = safeIso(time);
       if (normalizedTime && parameter !== undefined && hasMeasuredValue(directValue)) {
-        records.push({ code: normalizeParam(parameter), time: normalizedTime, value: Number(directValue), unit: String(unit || '') || undefined });
+        records.push({ code: normalizeParam(parameter), time: normalizedTime, value: Number(directValue), unit: String(unit || '').replace('/m3', '/m³') || undefined, quality: value.airquality || null });
       }
       if (normalizedTime) {
         Object.entries(value).forEach(([key, child]) => {
@@ -293,8 +312,21 @@
     };
     walk(payload);
     const unique = new Map();
-    records.filter(r => r.code !== 'UNKNOWN' && !Number.isNaN(new Date(r.time).getTime())).forEach(r => unique.set(`${r.code}|${r.time}`, r));
-    return [...unique.values()];
+    records.filter(r => r.code !== 'UNKNOWN' && !Number.isNaN(new Date(r.time).getTime())).forEach(record => {
+      const key = `${record.code}|${record.time}`;
+      const current = unique.get(key);
+      if (!current || (record.quality && !current.quality)) unique.set(key, record);
+    });
+    const selected = [...unique.values()];
+    const byTime = selected.reduce((map, record) => {
+      if (!map.has(record.time)) map.set(record.time, []);
+      map.get(record.time).push(record);
+      return map;
+    }, new Map());
+    const pendingTimes = new Set([...byTime.entries()]
+      .filter(([, items]) => items.length > 1 && items.every(item => Number(item.value) === 0) && items.every(item => !item.quality))
+      .map(([time]) => time));
+    return selected.filter(record => !pendingTimes.has(record.time));
   }
 
   function historyFromRecords(records) {
@@ -332,9 +364,12 @@
     }
     if (!base) throw stationError || new Error('Список станций недоступен');
     const candidates = chooseStationArray(stationPayload);
-    let stations = candidates.map(normalizeStation).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon));
+    let stations = candidates.map(normalizeStation)
+      .filter(item => OFFICIAL_STATION_IDS.includes(String(item.id)))
+      .filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lon));
     stations.forEach(item => { item.distance = distanceKm(FACILITY, item); });
-    stations = stations.filter(item => item.distance <= RADIUS_KM).sort((a,b) => a.distance - b.distance).slice(0, 9);
+    stations = stations.filter(item => item.distance <= RADIUS_KM)
+      .sort((a,b) => OFFICIAL_STATION_IDS.indexOf(String(a.id)) - OFFICIAL_STATION_IDS.indexOf(String(b.id)));
     if (!stations.length) throw new Error('В ответе не найдены станции с координатами вокруг Zorrotza');
 
     await Promise.all(stations.map(async station => {
@@ -408,26 +443,28 @@
     setSourceState('loading', cachedBeforeRefresh ? 'Обновляем официальные данные…' : 'Подключаем официальные измерения…', cachedBeforeRefresh ? `Сейчас показаны данные ${relativeTime(cachedBeforeRefresh.savedAt)}` : 'Сеть станций уже доступна');
     try {
       try {
-        const published = await loadPublishedSnapshot();
-        state.stations = published.stations;
+        const live = await loadLiveStations();
+        state.stations = live.stations;
         state.sourceMode = 'live';
-        state.lastSync = published.generatedAt;
-        state.sourceMessage = 'Официальные данные Open Data Euskadi';
-        state.sourceDetail = `Снимок обновлён сервером ${fmtDate(state.lastSync)}. Телефон получает его с GitHub Pages без обращения к заблокированному внешнему API.`;
+        const measurementTimes = state.stations.map(latestTime).filter(Boolean).map(value => new Date(value).getTime()).filter(Number.isFinite);
+        state.lastSync = measurementTimes.length ? new Date(Math.max(...measurementTimes)).toISOString() : new Date().toISOString();
+        state.sourceMessage = 'Живые официальные данные';
+        state.sourceDetail = `Прямой ответ ${live.base}. Последний завершённый час: ${fmtDate(state.lastSync)}.`;
         saveCache(state.stations, state.lastSync);
-        setSourceState('live', 'Официальные измерения получены', `Обновлено ${relativeTime(state.lastSync)}`);
+        setSourceState('live', 'Официальные измерения получены', `Последний час ${relativeTime(state.lastSync)}`);
         if (force) showToast('Данные обновлены');
         return;
-      } catch { /* до первого серверного снимка пробуем официальный API напрямую */ }
-      const live = await loadLiveStations();
-      state.stations = live.stations;
-      state.sourceMode = 'live';
-      state.lastSync = new Date().toISOString();
-      state.sourceMessage = 'Живые официальные данные';
-      state.sourceDetail = `Прямой ответ ${live.base}`;
-      saveCache(state.stations, state.lastSync);
-      setSourceState('live', 'Живые официальные данные', `Open Data Euskadi · синхронизация ${fmtDate(state.lastSync, false)}`);
-      showToast('Данные обновлены');
+      } catch {
+        const published = await loadPublishedSnapshot();
+        state.stations = published.stations;
+        state.sourceMode = 'cache';
+        state.lastSync = published.generatedAt;
+        state.sourceMessage = 'Резервный опубликованный снимок';
+        state.sourceDetail = `Прямой API временно недоступен. Показан последний снимок от ${fmtDate(state.lastSync)}.`;
+        saveCache(state.stations, state.lastSync);
+        setSourceState('cache', 'Официальные данные из резерва', `Обновлено ${relativeTime(state.lastSync)}`);
+        if (force) showToast('Показан последний доступный снимок');
+      }
     } catch (error) {
       const cached = readCache();
       if (cached) {
@@ -872,6 +909,9 @@
     });
     window.addEventListener('hashchange', () => navigate(location.hash.slice(1) || 'overview', false));
     window.addEventListener('resize', () => leafletMap?.invalidateSize(false));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') loadData(false);
+    });
   }
 
   async function init() {
@@ -881,6 +921,9 @@
       try { await navigator.serviceWorker.register('./sw.js'); } catch { /* PWA still works online */ }
     }
     await loadData(false);
+    window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadData(false);
+    }, AUTO_REFRESH_MS);
   }
 
   init();
