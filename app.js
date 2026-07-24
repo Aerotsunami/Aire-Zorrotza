@@ -717,7 +717,7 @@
       const timestamp = start + (end - start) * index / (tickCount - 1);
       return { timestamp, x: x(timestamp), label: chartTime(timestamp, hours > 24 || index === 0) };
     });
-    return { segments: mappedSegments, dots, min: rawMin, max: rawMax, yTicks, xTicks, width, height, plotBottom: height - pad.bottom };
+    return { segments: mappedSegments, dots, min: rawMin, max: rawMax, yTicks, xTicks, width, height, plotBottom: height - pad.bottom, latestTimestamp: valid.at(-1)?.timestamp || end };
   }
 
   function renderDetailChart(geo, primary, unit) {
@@ -727,7 +727,14 @@
     const areas = geo.segments.map(segment => `<path class="data-area" d="${segment.area}"/>`).join('');
     const lines = geo.segments.map(segment => `<path class="data-line" d="${segment.line}"/>`).join('');
     const dots = geo.dots.map(point => `<circle class="chart-point" cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="8" data-chart-time="${esc(chartTime(point.time, true))}" data-chart-value="${fmtNumber(point.value)}" data-chart-unit="${esc(unit)}"><title>${esc(chartTime(point.time, true))}: ${fmtNumber(point.value)} ${esc(unit)}</title></circle>`).join('');
-    return `<div class="detail-chart-plot"><svg class="spark-svg" viewBox="0 0 ${geo.width} ${geo.height}" role="img" aria-label="Почасовой график ${esc(primary)} за ${state.detailHours} часов"><defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#77e7c2" stop-opacity=".42"/><stop offset="1" stop-color="#77e7c2" stop-opacity=".02"/></linearGradient></defs><text class="axis-title" x="10" y="13">${esc(unit)}</text>${yGrid}${xGrid}${areas}${lines}${dots}</svg><div class="chart-tooltip" id="detailChartTooltip" role="status"></div></div><div class="chart-caption"><span>Почасовые измерения · время Бильбао</span><span>Разрывы линии = нет данных</span></div>`;
+    return `<div class="detail-chart-plot"><svg class="spark-svg" viewBox="0 0 ${geo.width} ${geo.height}" role="img" aria-label="Почасовой график ${esc(primary)} за ${state.detailHours} часов"><defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#77e7c2" stop-opacity=".42"/><stop offset="1" stop-color="#77e7c2" stop-opacity=".02"/></linearGradient></defs><text class="axis-title" x="10" y="13">${esc(unit)}</text>${yGrid}${xGrid}${areas}${lines}${dots}</svg><div class="chart-tooltip" id="detailChartTooltip" role="status"></div></div><div class="chart-caption"><span>Последняя точка: ${esc(chartTime(geo.latestTimestamp, true))} · время Бильбао</span><span>Разрывы линии = нет данных</span></div>`;
+  }
+
+  function scrollDetailChartToLatest() {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const plot = $('#stationDetail .detail-chart-plot');
+      if (plot) plot.scrollLeft = plot.scrollWidth;
+    }));
   }
 
   function renderStationDetail() {
@@ -748,6 +755,7 @@
       <div class="detail-metrics">${codes.map(code => { const r = readings[code]; const l = levelFor(code,r?.value); return `<div class="detail-metric"><small>${esc(PARAMETERS[code]?.full || code)}</small><strong>${fmtNumber(r?.value)} <em>${esc(r?.unit || PARAMETERS[code]?.unit || '')}</em></strong><em>${esc(l?.label || PARAMETERS[code]?.note || 'измерено')}</em></div>`; }).join('')}</div>
       <div class="quality-block"><h3>Полнота последних 24 часов</h3><div class="quality-row"><div class="quality-progress"><span style="width:${dataCompleteness(station)}%"></span></div><b>${dataCompleteness(station)}%</b><span>· пропуски не интерполируются</span></div></div>
       <p class="fine-print"><a href="${esc(station.officialUrl)}" target="_blank" rel="noreferrer">Открыть карточку официальной станции ↗</a></p>`;
+    scrollDetailChartToLatest();
   }
 
   function chooseDefaultCompareParameter() {
@@ -834,6 +842,7 @@
       requestAnimationFrame(() => leafletMap?.invalidateSize(false));
       setTimeout(() => leafletMap?.invalidateSize(false), 220);
     }
+    if (view === 'stations') scrollDetailChartToLatest();
   }
 
   function showToast(message) {
