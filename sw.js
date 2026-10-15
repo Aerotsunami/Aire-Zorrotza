@@ -1,6 +1,6 @@
-const CACHE = 'zorrotza-aire-v1.4.5';
+const CACHE = 'zorrotza-aire-v1.4.6';
 const APP_SHELL = [
-  './', './index.html', './styles.css?v=1.4.5', './app.js?v=1.4.5', './manifest.webmanifest',
+  './', './index.html', './styles.css?v=1.4.6', './app.js?v=1.4.6', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'
 ];
 
@@ -16,6 +16,9 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   const isData = url.hostname.includes('euskadi.eus') || url.hostname.includes('api.euskadi');
+  // Тайлы карты не кэшируем: иначе ошибочный тайл (например, «API key required») залипает навсегда.
+  const isMapTile = url.hostname.includes('arcgisonline.com') || url.hostname.includes('openstreetmap.org') || url.hostname.includes('cartocdn.com');
+  if (isMapTile) return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith(fetch(event.request).then(response => {

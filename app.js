@@ -74,6 +74,26 @@
   };
 
   let leafletMap = null;
+
+  // Подложки без API-ключа: тёмная Esri, при сбое — стандартная OSM (затемняется через CSS).
+  const BASEMAPS = [
+    {
+      id: 'esri-dark',
+      layers: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}'
+      ],
+      options: { maxNativeZoom: 16, maxZoom: 19 },
+      attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    },
+    {
+      id: 'osm',
+      layers: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      options: { maxNativeZoom: 19, maxZoom: 19 },
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }
+  ];
+
   let stationLayer = null;
   let facilityLayer = null;
 
@@ -566,11 +586,7 @@
         minZoom: 10,
         maxZoom: 19
       });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        subdomains: 'abcd',
-        maxZoom: 20,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-      }).addTo(leafletMap);
+      addBaseLayer(leafletMap);
       L.control.zoom({ position: 'bottomright' }).addTo(leafletMap);
       stationLayer = L.layerGroup().addTo(leafletMap);
       facilityLayer = L.layerGroup().addTo(leafletMap);
@@ -635,6 +651,29 @@
     });
 
     requestAnimationFrame(() => leafletMap?.invalidateSize(false));
+  }
+
+  function addBaseLayer(map, index = 0) {
+    const basemap = BASEMAPS[index];
+    if (!basemap) return;
+    map.getContainer().dataset.basemap = basemap.id;
+    let errors = 0;
+    let loaded = 0;
+    let switched = false;
+    const group = L.layerGroup(basemap.layers.map((url, i) => {
+      const layer = L.tileLayer(url, { ...basemap.options, attribution: i === 0 ? basemap.attribution : '' });
+      if (i === 0) {
+        layer.on('tileload', () => { loaded += 1; });
+        layer.on('tileerror', () => {
+          errors += 1;
+          if (switched || loaded > 0 || errors < 4 || !BASEMAPS[index + 1]) return;
+          switched = true;
+          map.removeLayer(group);
+          addBaseLayer(map, index + 1);
+        });
+      }
+      return layer;
+    })).addTo(map);
   }
 
   function colorForLevel(index = 0) { return ['#77e7c2','#c8ef6b','#ffc867','#ff8b69','#c092df','#8f3158'][index] || '#77e7c2'; }
