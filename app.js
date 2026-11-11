@@ -544,6 +544,40 @@
     }).join('');
   }
 
+  // Keyless basemaps only: CARTO now answers with an "API key required" tile.
+  const TILE_PROVIDERS = [
+    {
+      id: 'osm',
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      options: { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }
+    },
+    {
+      id: 'esri',
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      options: { maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors' }
+    }
+  ];
+  let baseLayer = null;
+
+  function addBaseLayer(index) {
+    const provider = TILE_PROVIDERS[index];
+    if (!provider || !leafletMap) return;
+    if (baseLayer) leafletMap.removeLayer(baseLayer);
+    const mapElement = leafletMap.getContainer();
+    TILE_PROVIDERS.forEach(item => mapElement.classList.remove(`tiles-${item.id}`));
+    mapElement.classList.add(`tiles-${provider.id}`);
+    let loaded = 0;
+    let failed = 0;
+    baseLayer = L.tileLayer(provider.url, provider.options)
+      .on('tileload', () => { loaded += 1; })
+      .on('tileerror', () => {
+        failed += 1;
+        if (!loaded && failed >= 4 && TILE_PROVIDERS[index + 1]) addBaseLayer(index + 1);
+      })
+      .addTo(leafletMap);
+    baseLayer.bringToBack();
+  }
+
   function renderMap() {
     const points = state.stations.filter(s => Number.isFinite(s.lat) && Number.isFinite(s.lon));
     const station = selectedStation();
@@ -566,11 +600,7 @@
         minZoom: 10,
         maxZoom: 19
       });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        subdomains: 'abcd',
-        maxZoom: 20,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-      }).addTo(leafletMap);
+      addBaseLayer(0);
       L.control.zoom({ position: 'bottomright' }).addTo(leafletMap);
       stationLayer = L.layerGroup().addTo(leafletMap);
       facilityLayer = L.layerGroup().addTo(leafletMap);

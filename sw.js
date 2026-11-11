@@ -1,6 +1,6 @@
-const CACHE = 'zorrotza-aire-v1.4.5';
+const CACHE = 'zorrotza-aire-v1.4.6';
 const APP_SHELL = [
-  './', './index.html', './styles.css?v=1.4.5', './app.js?v=1.4.5', './manifest.webmanifest',
+  './', './index.html', './styles.css?v=1.4.6', './app.js?v=1.4.6', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'
 ];
 
